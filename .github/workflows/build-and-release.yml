@@ -1,22 +1,19 @@
 name: 🚀 Build and Release PDF Unlocker Pro
 
 on:
-  # Tag push edildiğinde çalış (v1.0.0, v1.1.0 gibi)
   push:
     tags:
-      - 'v*.*.*'
-  
-  # Manuel tetikleme için
+      - "v*.*.*"
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g., v1.0.0)'
+        description: "Release version (e.g., v1.0.0)"
         required: true
-        default: 'v1.0.0'
+        default: "v1.0.0"
       draft:
-        description: 'Create as draft release'
+        description: "Create as draft release"
         required: false
-        default: 'false'
+        default: "false"
         type: boolean
 
 env:
@@ -24,406 +21,378 @@ env:
   PYTHON_VERSION: "3.11"
 
 jobs:
-  # Windows Build
   build-windows:
     name: 🪟 Build for Windows
     runs-on: windows-latest
-    
-    steps:
-    - name: 📥 Checkout Repository
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0  # Tüm geçmişi al (tag bilgileri için)
-    
-    - name: 🐍 Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
-        cache: 'pip'
-    
-    - name: 📦 Install Dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pyinstaller
-    
-    - name: 🏷️ Get Version
-      id: version
-      run: |
-        if ("${{ github.event_name }}" -eq "workflow_dispatch") {
-          $version = "${{ github.event.inputs.version }}"
-          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
-          echo "VERSION_CLEAN=$($version -replace '^v', '')" >> $env:GITHUB_OUTPUT
-        } else {
-          $version = "${{ github.ref_name }}"
-          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
-          echo "VERSION_CLEAN=$($version -replace '^v', '')" >> $env:GITHUB_OUTPUT
-        }
-        echo "Building version: $version"
-    
-    - name: 🔨 Build Windows Executable
-      run: |
-        $version = "${{ steps.version.outputs.VERSION }}"
-        $exe_name = "${{ env.APP_NAME }}_$version"
-        
-        # Icon varsa ekle
-        $icon_arg = ""
-        if (Test-Path "icon.ico") {
-          $icon_arg = "--icon=icon.ico"
-        }
-        
-        # PyInstaller komutu
-        pyinstaller --onefile --windowed --name $exe_name --optimize 2 --noupx --clean $icon_arg pdf_unlocker_pro.py
-        
-        # Dosya boyutunu kontrol et
-        $exe_path = "dist/$exe_name.exe"
-        if (Test-Path $exe_path) {
-          $size = (Get-Item $exe_path).Length / 1MB
-          Write-Host "✅ Build successful: $exe_name.exe ($([math]::Round($size, 1)) MB)"
-        } else {
-          Write-Host "❌ Build failed - executable not found"
-          exit 1
-        }
-    
-    - name: 🧪 Test Executable
-      run: |
-        $version = "${{ steps.version.outputs.VERSION }}"
-        $exe_name = "${{ env.APP_NAME }}_$version"
-        $exe_path = "dist/$exe_name.exe"
-        
-        # Basit test - executable çalışıyor mu?
-        if (Test-Path $exe_path) {
-          Write-Host "✅ Executable file exists and is ready"
-        } else {
-          Write-Host "❌ Executable test failed"
-          exit 1
-        }
-    
-    - name: 📁 Upload Windows Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: windows-executable
-        path: dist/*.exe
-        retention-days: 5
 
-  # Linux Build
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: 📦 Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: 🏷️ Get Version
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${{ github.ref_name }}"
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "VERSION_CLEAN=${VERSION#v}" >> $GITHUB_OUTPUT
+          echo "Building version: $VERSION"
+
+      - name: 🔨 Build Windows Executable
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.VERSION }}"
+          $exe_name = "${{ env.APP_NAME }}_$version"
+          $icon_arg = ""
+          if (Test-Path "icon.ico") { $icon_arg = "--icon=icon.ico" }
+          $pyinstallerCmd = "pyinstaller --onefile --windowed --name `"$exe_name`" --optimize 2 --noupx --clean $icon_arg pdf_unlocker_pro.py"
+          Write-Host "Running: $pyinstallerCmd"
+          Invoke-Expression $pyinstallerCmd
+
+          $exe_path = "dist/$exe_name.exe"
+          if (Test-Path $exe_path) {
+            $size = (Get-Item $exe_path).Length / 1MB
+            Write-Host "✅ Build successful: $exe_name.exe ($([math]::Round($size, 1)) MB)"
+          } else {
+            Write-Host "❌ Build failed - executable not found"
+            exit 1
+          }
+
+      - name: 🧪 Test Executable
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.VERSION }}"
+          $exe_name = "${{ env.APP_NAME }}_$version"
+          $exe_path = "dist/$exe_name.exe"
+          if (Test-Path $exe_path) {
+            Write-Host "✅ Executable file exists and is ready"
+          } else {
+            Write-Host "❌ Executable test failed"
+            exit 1
+          }
+
+      - name: 📁 Upload Windows Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-executable
+          path: dist/*.exe
+          retention-days: 5
+
   build-linux:
     name: 🐧 Build for Linux
     runs-on: ubuntu-latest
-    
-    steps:
-    - name: 📥 Checkout Repository
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-    
-    - name: 🐍 Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
-        cache: 'pip'
-    
-    - name: 📦 Install Dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pyinstaller
-        
-        # Linux için tkinter kurulum
-        sudo apt-get update
-        sudo apt-get install -y python3-tk python3-dev
-    
-    - name: 🏷️ Get Version
-      id: version
-      run: |
-        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-          VERSION="${{ github.event.inputs.version }}"
-        else
-          VERSION="${{ github.ref_name }}"
-        fi
-        echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-        echo "VERSION_CLEAN=${VERSION#v}" >> $GITHUB_OUTPUT
-        echo "Building version: $VERSION"
-    
-    - name: 🔨 Build Linux Executable
-      run: |
-        VERSION="${{ steps.version.outputs.VERSION }}"
-        EXE_NAME="${{ env.APP_NAME }}_${VERSION}_linux"
-        
-        pyinstaller --onefile --windowed --name "$EXE_NAME" --optimize 2 --clean pdf_unlocker_pro.py
-        
-        # Dosya izinlerini ayarla
-        chmod +x "dist/$EXE_NAME"
-        
-        # Dosya boyutunu kontrol et
-        if [ -f "dist/$EXE_NAME" ]; then
-          SIZE=$(du -m "dist/$EXE_NAME" | cut -f1)
-          echo "✅ Build successful: $EXE_NAME ($SIZE MB)"
-        else
-          echo "❌ Build failed - executable not found"
-          exit 1
-        fi
-    
-    - name: 📁 Upload Linux Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: linux-executable
-        path: dist/*_linux
-        retention-days: 5
 
-  # macOS Build
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: 📦 Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+          sudo apt-get update
+          sudo apt-get install -y python3-tk python3-dev
+
+      - name: 🏷️ Get Version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${{ github.ref_name }}"
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "VERSION_CLEAN=${VERSION#v}" >> $GITHUB_OUTPUT
+          echo "Building version: $VERSION"
+
+      - name: 🔨 Build Linux Executable
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          EXE_NAME="${{ env.APP_NAME }}_${VERSION}_linux"
+          pyinstaller --onefile --windowed --name "$EXE_NAME" --optimize 2 --clean pdf_unlocker_pro.py
+          chmod +x "dist/$EXE_NAME"
+          if [ -f "dist/$EXE_NAME" ]; then
+            SIZE=$(du -m "dist/$EXE_NAME" | cut -f1)
+            echo "✅ Build successful: $EXE_NAME ($SIZE MB)"
+          else
+            echo "❌ Build failed - executable not found"
+            exit 1
+          fi
+
+      - name: 📁 Upload Linux Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-executable
+          path: dist/*_linux
+          retention-days: 5
+
   build-macos:
     name: 🍎 Build for macOS
     runs-on: macos-latest
-    
-    steps:
-    - name: 📥 Checkout Repository
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-    
-    - name: 🐍 Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
-        cache: 'pip'
-    
-    - name: 📦 Install Dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pyinstaller
-    
-    - name: 🏷️ Get Version
-      id: version
-      run: |
-        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-          VERSION="${{ github.event.inputs.version }}"
-        else
-          VERSION="${{ github.ref_name }}"
-        fi
-        echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-        echo "VERSION_CLEAN=${VERSION#v}" >> $GITHUB_OUTPUT
-        echo "Building version: $VERSION"
-    
-    - name: 🔨 Build macOS Executable
-      run: |
-        VERSION="${{ steps.version.outputs.VERSION }}"
-        EXE_NAME="${{ env.APP_NAME }}_${VERSION}_macos"
-        
-        pyinstaller --onefile --windowed --name "$EXE_NAME" --optimize 2 --clean pdf_unlocker_pro.py
-        
-        # Dosya izinlerini ayarla
-        chmod +x "dist/$EXE_NAME"
-        
-        # Dosya boyutunu kontrol et
-        if [ -f "dist/$EXE_NAME" ]; then
-          SIZE=$(du -m "dist/$EXE_NAME" | cut -f1)
-          echo "✅ Build successful: $EXE_NAME ($SIZE MB)"
-        else
-          echo "❌ Build failed - executable not found"
-          exit 1
-        fi
-    
-    - name: 📁 Upload macOS Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: macos-executable
-        path: dist/*_macos
-        retention-days: 5
 
-  # Release Creation
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: 📦 Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: 🏷️ Get Version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${{ github.ref_name }}"
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "VERSION_CLEAN=${VERSION#v}" >> $GITHUB_OUTPUT
+          echo "Building version: $VERSION"
+
+      - name: 🔨 Build macOS Executable
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          EXE_NAME="${{ env.APP_NAME }}_${VERSION}_macos"
+          pyinstaller --onefile --windowed --name "$EXE_NAME" --optimize 2 --clean pdf_unlocker_pro.py
+          chmod +x "dist/$EXE_NAME"
+          if [ -f "dist/$EXE_NAME" ]; then
+            SIZE=$(du -m "dist/$EXE_NAME" | cut -f1)
+            echo "✅ Build successful: $EXE_NAME ($SIZE MB)"
+          else
+            echo "❌ Build failed - executable not found"
+            exit 1
+          fi
+
+      - name: 📁 Upload macOS Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-executable
+          path: dist/*_macos
+          retention-days: 5
+
   create-release:
     name: 🚀 Create GitHub Release
     needs: [build-windows, build-linux, build-macos]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
-    
+
     permissions:
       contents: write
       actions: read
-    
+
     steps:
-    - name: 📥 Checkout Repository
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-    
-    - name: 🏷️ Get Version
-      id: version
-      run: |
-        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-          VERSION="${{ github.event.inputs.version }}"
-          IS_DRAFT="${{ github.event.inputs.draft }}"
-        else
-          VERSION="${{ github.ref_name }}"
-          IS_DRAFT="false"
-        fi
-        echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-        echo "VERSION_CLEAN=${VERSION#v}" >> $GITHUB_OUTPUT
-        echo "IS_DRAFT=$IS_DRAFT" >> $GITHUB_OUTPUT
-    
-    - name: 📥 Download All Artifacts
-      uses: actions/download-artifact@v4
-      with:
-        path: artifacts
-        merge-multiple: true
-    
-    - name: 📋 List Downloaded Files
-      run: |
-        echo "Downloaded artifacts:"
-        find artifacts -type f -name "*" | sort
-        echo ""
-        echo "File sizes:"
-        find artifacts -type f -name "*" -exec ls -lh {} \;
-    
-    - name: 📝 Generate Release Notes
-      id: release_notes
-      run: |
-        VERSION="${{ steps.version.outputs.VERSION }}"
-        CLEAN_VERSION="${{ steps.version.outputs.VERSION_CLEAN }}"
-        
-        # Get current date
-        RELEASE_DATE=$(date +"%B %d, %Y")
-        
-        # Count files
-        WIN_COUNT=$(find artifacts -name "*.exe" | wc -l)
-        LINUX_COUNT=$(find artifacts -name "*_linux" | wc -l)
-        MACOS_COUNT=$(find artifacts -name "*_macos" | wc -l)
-        
-        # Release notlarını oluştur
-        cat > release_notes.md << EOF
-        ## 🚀 PDF Unlocker Pro $VERSION
-        
-        Released on $RELEASE_DATE
-        
-        ### ✨ What's New in This Release
-        - 🖥️ **Modern GUI Interface** - Clean, intuitive user interface
-        - 🔐 **Multiple Unlock Methods**:
-          - Owner password restrictions removal
-          - Common password dictionary attack  
-          - Short brute-force cracking (1-3 characters)
-        - 📊 **Real-time Progress Tracking** - Live log and progress bar
-        - 🚀 **Fast Processing** - Multi-threaded operation
-        - 💾 **Auto-naming** - Automatic output file naming
-        - 🛡️ **Safe Operation** - No data sent to external servers
-        - 🌍 **Cross-platform** - Works on Windows, Linux, and macOS
-        
-        ### 📥 Downloads
-        
-        Choose the right version for your operating system:
-        
-        | Platform | File | Status |
-        |----------|------|--------|
-        | 🪟 **Windows** | \`PDF_Unlocker_Pro_${VERSION}.exe\` | ✅ Ready ($WIN_COUNT file) |
-        | 🐧 **Linux** | \`PDF_Unlocker_Pro_${VERSION}_linux\` | ✅ Ready ($LINUX_COUNT file) |
-        | 🍎 **macOS** | \`PDF_Unlocker_Pro_${VERSION}_macos\` | ✅ Ready ($MACOS_COUNT file) |
-        
-        ### 🚀 Quick Start Guide
-        1. **Download** the appropriate file for your operating system
-        2. **Run** the executable (no installation required!)
-        3. **Select** your locked PDF file using the "Browse" button
-        4. **Click** "UNLOCK PDF" button and wait for processing
-        5. **Save** the unlocked PDF file to your desired location
-        
-        ### 🔧 Technical Details
-        - **Built with**: Python 3.11 + PyInstaller
-        - **GUI Framework**: Tkinter (native cross-platform)
-        - **PDF Library**: PyPDF2 (latest version)
-        - **Size**: ~15-20 MB per platform
-        - **No dependencies**: Fully standalone executables
-        
-        ### 💻 System Requirements
-        
-        **Windows:**
-        - Windows 10/11 (64-bit)
-        - 256 MB RAM minimum
-        - 50 MB free disk space
-        
-        **Linux:**
-        - Ubuntu 18.04+ or equivalent distribution
-        - GUI environment (X11/Wayland)
-        - 256 MB RAM minimum  
-        - 50 MB free disk space
-        
-        **macOS:**
-        - macOS 10.14 (Mojave) or later
-        - 256 MB RAM minimum
-        - 50 MB free disk space
-        
-        ### 🔒 Security & Privacy
-        - ✅ **100% Offline** - No internet connection required
-        - ✅ **No Data Collection** - Your files never leave your computer
-        - ✅ **Open Source** - Full source code available
-        - ✅ **No Installation** - Portable executables
-        - ✅ **Virus Scanned** - Built with GitHub Actions
-        
-        ### 📋 Supported PDF Types
-        - ✅ **Owner Password Protected** - Removes printing/copying restrictions
-        - ✅ **Weak User Passwords** - Cracks simple passwords (1-3 chars)
-        - ✅ **Common Passwords** - Tests frequently used passwords
-        - ✅ **40-bit RC4 Encryption** - Legacy PDF encryption
-        - ✅ **128-bit RC4/AES** - Some modern PDFs
-        - ❌ **Strong 256-bit AES** - Complex passwords not supported
-        
-        ### 🐛 Known Issues & Limitations
-        - Large PDF files (>100MB) may take longer to process
-        - Very strong/long passwords cannot be cracked
-        - Some modern PDF encryption methods are not supported
-        - GUI may freeze briefly during intensive operations (this is normal)
-        
-        ### 🤝 Contributing
-        This is an open-source project! Feel free to:
-        - Report bugs in the [Issues](https://github.com/guleyc/pdf-unlocker-pro/issues) section
-        - Suggest new features
-        - Submit pull requests
-        - Star the repository if you find it useful ⭐
-        
-        ### ⚖️ Legal Notice
-        **Important**: This tool should only be used on PDF files that you own or have explicit permission to unlock. Unauthorized access to password-protected documents may violate local laws and regulations.
-        
-        ### 🆘 Need Help?
-        - 📖 Check the [README](https://github.com/guleyc/pdf-unlocker-pro/blob/main/README.md) for detailed instructions
-        - 🐛 Report issues on [GitHub Issues](https://github.com/guleyc/pdf-unlocker-pro/issues)
-        - 💬 Start a [Discussion](https://github.com/guleyc/pdf-unlocker-pro/discussions) for questions
-        
-        ---
-        
-        **🧑‍💻 Author**: Cagatay Guley  
-        **🌐 Website**: [guley.com.tr](https://guley.com.tr)  
-        **📜 License**: MIT License  
-        **🏗️ Built**: $(date -u '+%Y-%m-%d %H:%M:%S') UTC  
-        **🤖 CI/CD**: GitHub Actions
-        EOF
-        
-        echo "RELEASE_NOTES<<EOF" >> $GITHUB_OUTPUT
-        cat release_notes.md >> $GITHUB_OUTPUT
-        echo "EOF" >> $GITHUB_OUTPUT
-    
-    - name: 🚀 Create Release
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: ${{ steps.version.outputs.VERSION }}
-        name: "PDF Unlocker Pro ${{ steps.version.outputs.VERSION }}"
-        body: ${{ steps.release_notes.outputs.RELEASE_NOTES }}
-        draft: ${{ steps.version.outputs.IS_DRAFT == 'true' }}
-        prerelease: false
-        files: |
-          artifacts/*.exe
-          artifacts/*_linux
-          artifacts/*_macos
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    
-    - name: ✅ Release Summary
-      run: |
-        echo "🎉 Release ${{ steps.version.outputs.VERSION }} created successfully!"
-        echo ""
-        echo "📁 Files included in release:"
-        find artifacts -type f | while read file; do
-          size=$(du -h "$file" | cut -f1)
-          filename=$(basename "$file")
-          echo "  ✅ $filename ($size)"
-        done
-        echo ""
-        echo "🔗 Release URL: https://github.com/${{ github.repository }}/releases/tag/${{ steps.version.outputs.VERSION }}"
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🏷️ Get Version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+            IS_DRAFT="${{ github.event.inputs.draft }}"
+          else
+            VERSION="${{ github.ref_name }}"
+            IS_DRAFT="false"
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "VERSION_CLEAN=${VERSION#v}" >> $GITHUB_OUTPUT
+          echo "IS_DRAFT=$IS_DRAFT" >> $GITHUB_OUTPUT
+
+      - name: 📥 Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: 📋 List Downloaded Files
+        run: |
+          echo "Downloaded artifacts:"
+          find artifacts -type f -name "*" | sort
+          echo ""
+          echo "File sizes:"
+          find artifacts -type f -name "*" -exec ls -lh {} \;
+
+      - name: 📝 Generate Release Notes
+        id: release_notes
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          CLEAN_VERSION="${{ steps.version.outputs.VERSION_CLEAN }}"
+          RELEASE_DATE=$(date +"%B %d, %Y")
+          WIN_COUNT=$(find artifacts -name "*.exe" | wc -l)
+          LINUX_COUNT=$(find artifacts -name "*_linux" | wc -l)
+          MACOS_COUNT=$(find artifacts -name "*_macos" | wc -l)
+          cat > release_notes.md << EOF
+          ## 🚀 PDF Unlocker Pro $VERSION
+
+          Released on $RELEASE_DATE
+
+          ### ✨ What's New in This Release
+          - 🖥️ **Modern GUI Interface** - Clean, intuitive user interface
+          - 🔐 **Multiple Unlock Methods**:
+            - Owner password restrictions removal
+            - Common password dictionary attack  
+            - Short brute-force cracking (1-3 characters)
+          - 📊 **Real-time Progress Tracking** - Live log and progress bar
+          - 🚀 **Fast Processing** - Multi-threaded operation
+          - 💾 **Auto-naming** - Automatic output file naming
+          - 🛡️ **Safe Operation** - No data sent to external servers
+          - 🌍 **Cross-platform** - Works on Windows, Linux, and macOS
+
+          ### 📥 Downloads
+
+          Choose the right version for your operating system:
+
+          | Platform | File | Status |
+          |----------|------|--------|
+          | 🪟 **Windows** | \`PDF_Unlocker_Pro_${VERSION}.exe\` | ✅ Ready ($WIN_COUNT file) |
+          | 🐧 **Linux** | \`PDF_Unlocker_Pro_${VERSION}_linux\` | ✅ Ready ($LINUX_COUNT file) |
+          | 🍎 **macOS** | \`PDF_Unlocker_Pro_${VERSION}_macos\` | ✅ Ready ($MACOS_COUNT file) |
+
+          ### 🚀 Quick Start Guide
+          1. **Download** the appropriate file for your operating system
+          2. **Run** the executable (no installation required!)
+          3. **Select** your locked PDF file using the "Browse" button
+          4. **Click** "UNLOCK PDF" button and wait for processing
+          5. **Save** the unlocked PDF file to your desired location
+
+          ### 🔧 Technical Details
+          - **Built with**: Python 3.11 + PyInstaller
+          - **GUI Framework**: Tkinter (native cross-platform)
+          - **PDF Library**: PyPDF2 (latest version)
+          - **Size**: ~15-20 MB per platform
+          - **No dependencies**: Fully standalone executables
+
+          ### 💻 System Requirements
+
+          **Windows:**
+          - Windows 10/11 (64-bit)
+          - 256 MB RAM minimum
+          - 50 MB free disk space
+
+          **Linux:**
+          - Ubuntu 18.04+ or equivalent distribution
+          - GUI environment (X11/Wayland)
+          - 256 MB RAM minimum  
+          - 50 MB free disk space
+
+          **macOS:**
+          - macOS 10.14 (Mojave) or later
+          - 256 MB RAM minimum
+          - 50 MB free disk space
+
+          ### 🔒 Security & Privacy
+          - ✅ **100% Offline** - No internet connection required
+          - ✅ **No Data Collection** - Your files never leave your computer
+          - ✅ **Open Source** - Full source code available
+          - ✅ **No Installation** - Portable executables
+          - ✅ **Virus Scanned** - Built with GitHub Actions
+
+          ### 📋 Supported PDF Types
+          - ✅ **Owner Password Protected** - Removes printing/copying restrictions
+          - ✅ **Weak User Passwords** - Cracks simple passwords (1-3 chars)
+          - ✅ **Common Passwords** - Tests frequently used passwords
+          - ✅ **40-bit RC4 Encryption** - Legacy PDF encryption
+          - ✅ **128-bit RC4/AES** - Some modern PDFs
+          - ❌ **Strong 256-bit AES** - Complex passwords not supported
+
+          ### 🐛 Known Issues & Limitations
+          - Large PDF files (>100MB) may take longer to process
+          - Very strong/long passwords cannot be cracked
+          - Some modern PDF encryption methods are not supported
+          - GUI may freeze briefly during intensive operations (this is normal)
+
+          ### 🤝 Contributing
+          This is an open-source project! Feel free to:
+          - Report bugs in the [Issues](https://github.com/guleyc/pdf-unlocker-pro/issues) section
+          - Suggest new features
+          - Submit pull requests
+          - Star the repository if you find it useful ⭐
+
+          ### ⚖️ Legal Notice
+          **Important**: This tool should only be used on PDF files that you own or have explicit permission to unlock. Unauthorized access to password-protected documents may violate local laws and regulations.
+
+          ### 🆘 Need Help?
+          - 📖 Check the [README](https://github.com/guleyc/pdf-unlocker-pro/blob/main/README.md) for detailed instructions
+          - 🐛 Report issues on [GitHub Issues](https://github.com/guleyc/pdf-unlocker-pro/issues)
+          - 💬 Start a [Discussion](https://github.com/guleyc/pdf-unlocker-pro/discussions) for questions
+
+          ---
+
+          **🧑‍💻 Author**: Cagatay Guley  
+          **🌐 Website**: [guley.com.tr](https://guley.com.tr)  
+          **📜 License**: MIT License  
+          **🏗️ Built**: $(date -u '+%Y-%m-%d %H:%M:%S') UTC  
+          **🤖 CI/CD**: GitHub Actions
+          EOF
+
+          echo "RELEASE_NOTES<<EOF" >> $GITHUB_OUTPUT
+          cat release_notes.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: 🚀 Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.VERSION }}
+          name: "PDF Unlocker Pro ${{ steps.version.outputs.VERSION }}"
+          body: ${{ steps.release_notes.outputs.RELEASE_NOTES }}
+          draft: ${{ steps.version.outputs.IS_DRAFT == 'true' }}
+          prerelease: false
+          files: |
+            artifacts/*.exe
+            artifacts/*_linux
+            artifacts/*_macos
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: ✅ Release Summary
+        run: |
+          echo "🎉 Release ${{ steps.version.outputs.VERSION }} created successfully!"
+          echo ""
+          echo "📁 Files included in release:"
+          find artifacts -type f | while read file; do
+            size=$(du -h "$file" | cut -f1)
+            filename=$(basename "$file")
+            echo "  ✅ $filename ($size)"
+          done
+          echo ""
+          echo "🔗 Release URL: https://github.com/${{ github.repository }}/releases/tag/${{ steps.version.outputs.VERSION }}"
